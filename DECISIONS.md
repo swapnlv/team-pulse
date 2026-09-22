@@ -27,3 +27,19 @@ Every non-trivial choice, the alternatives considered, and why. Newest at the bo
 **Why:** Phase 1 doesn't touch any of those. Standing up infrastructure before it's used defeats the "feel the problem before applying the pattern" build order — it also makes `docker-compose up` slower and gives more things to debug for zero learning benefit right now. Services get added to the compose file in the phase that first needs them.
 
 ---
+
+## 2026-09-21 — Entity IDs generated in the application, not the database
+
+**Alternatives considered:** `DEFAULT gen_random_uuid()` on each `id` column (requires the `pgcrypto` extension)
+
+**Why:** Avoids adding a Postgres extension for no benefit yet. `UUID.randomUUID()` assigned when the entity is constructed is simpler to reason about and identical from the application's perspective.
+
+---
+
+## 2026-09-21 — Testcontainers added in Phase 1 step 1, ahead of when it's strictly needed
+
+**Alternatives considered:** H2 in-memory for now, add Testcontainers later when RLS testing needs real Postgres
+
+**Why:** RLS (step 4) is Postgres-specific and can't be tested against H2 at all, so Testcontainers is coming in regardless — bringing it in now means the pom and test setup only change once, and the CRUD integration test already runs against the real engine the app targets in production.
+
+---
