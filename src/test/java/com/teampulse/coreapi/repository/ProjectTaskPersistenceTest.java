@@ -134,6 +134,13 @@ class ProjectTaskPersistenceTest {
         System.out.println("[Q3b] then every getTasks() (" + total + " rows total): "
                 + (afterTouchingEveryCollection - afterFindAll) + " statement(s)");
         System.out.println("[Q3b] total:                                " + afterTouchingEveryCollection);
+
+        // Regression guard for the N+1 fixed by @EntityGraph(attributePaths = "tasks") on
+        // ProjectRepository.findAll(): one statement loads projects and tasks together, and
+        // touching every collection afterwards must not hit the database again.
+        assertThat(total).isEqualTo(6);
+        assertThat(afterFindAll).isEqualTo(1);
+        assertThat(afterTouchingEveryCollection - afterFindAll).isZero();
     }
 
     // ---------------------------------------------------------------- the round trip itself
