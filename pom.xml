@@ -19,6 +19,11 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- Override Spring Boot 3.3.4's managed 1.19.8. That version ships docker-java 3.3.x,
+             which talks Docker API < 1.44; Docker Engine 29 rejects anything below 1.44, so
+             every Testcontainers strategy failed with an opaque HTTP 400 on /info. 1.21.3 still
+             failed on Engine 29; 1.21.4 is the first version that works. -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
@@ -63,6 +68,26 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Persistence tests run against a throwaway Postgres 16 container, not the
+             compose database: a fresh container proves the Flyway migration alone can
+             build a schema that ddl-auto:validate accepts, and an empty database is the
+             only way SQL statement counts mean anything. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
