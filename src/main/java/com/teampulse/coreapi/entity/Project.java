@@ -18,14 +18,14 @@ public class Project{
     @Id
     @GeneratedValue(strategy= GenerationType.UUID)
     private UUID projectId;
-    private String name;
+    private String projectName;
     @OneToMany(mappedBy = "project")
     private List<Task> tasks=new ArrayList<>();
 
     public Project() {}
 
-    public Project(String name, List<Task> tasks) {
-        this.name = name;
+    public Project(String projectName, List<Task> tasks) {
+        this.projectName = projectName;
         this.tasks = tasks;
     }
 }

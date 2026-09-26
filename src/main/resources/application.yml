@@ -2,7 +2,7 @@ spring:
   application:
     name: core-api
   datasource:
-    url: jdbc:postgresql://localhost:5432/teampulse
+    url: jdbc:postgresql://localhost:5433/teampulse
     username: teampulse
     password: teampulse
   jpa:
