@@ -19,10 +19,11 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- Override Spring Boot 3.3.4's managed 1.19.8. That version ships docker-java 3.3.x,
-             which talks Docker API < 1.44; Docker Engine 29 rejects anything below 1.44, so
-             every Testcontainers strategy failed with an opaque HTTP 400 on /info. 1.21.3 still
-             failed on Engine 29; 1.21.4 is the first version that works. -->
+        <!-- Override Spring Boot 3.3.4's managed 1.19.8, which cannot reach Docker Desktop
+             4.53 / Engine 29: every client strategy failed with an opaque HTTP 400 on /info.
+             1.21.3 fails the same way, so the cause is not the bundled docker-java version
+             (1.21.3 and 1.21.4 both ship 3.4.2) but Testcontainers' own Docker discovery.
+             1.21.4 is the first version that connects here. Do not downgrade. -->
         <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 

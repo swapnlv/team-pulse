@@ -43,3 +43,53 @@ Every non-trivial choice, the alternatives considered, and why. Newest at the bo
 **Why:** A multi-tenant backend must not depend on the host's timezone. UTC is the neutral default, and conversion to a tenant's zone belongs at the API edge. Configured in the pom for `spring-boot:run` (`jvmArguments`) and for tests (surefire `argLine`), because a `main()` call wouldn't cover tests. Running from an IDE needs the same VM option (`-Duser.timezone=UTC`).
 
 ---
+## 2026-09-27 — Persistence tests run on Testcontainers, not the compose Postgres
+
+**Alternatives considered:** Point `@DataJpaTest` at the compose database on 5433; use H2 in-memory.
+
+**Why:** A throwaway container proves the Flyway migration *alone* can build a schema that `ddl-auto: validate` accepts — the compose database has a persistent volume, so it could be passing on state some earlier hand-run created. It also matters for counting SQL: statement counts and N+1 demonstrations only mean something against a database with known contents. H2 was never a candidate; the whole point of Phase 1 is that the dialect is Postgres. The compose database stays for running the app by hand.
+
+**Status:** blocked, not yet green. See INCIDENTS — Testcontainers' docker-java client cannot reach Docker Desktop 4.53 / Engine 29 on this machine.
+
+---
+
+## 2026-09-27 — Controllers return DTO records, never entities
+
+**Alternatives considered:** Return `Project`/`Task` directly and annotate them with `@JsonIgnore` where needed.
+
+**Why:** Four separate reasons, and it's worth being able to give more than "it's cleaner":
+
+1. **Lazy loading escapes the transaction.** `Task.project` is `LAZY`. If the entity itself were serialised, Jackson would walk that proxy *after* the service's transaction closed, giving `LazyInitializationException` — or, worse, an open-session-in-view workaround that hides N+1 queries inside the serialiser.
+2. **The wire format would inherit the schema.** Renaming a column or extracting a table would silently change the JSON. DTOs make that a deliberate edit instead of an accident.
+3. **Write-side exposure.** An entity used as a `@RequestBody` lets a caller set any mapped field, including its own id or its project. `TaskRequest` has no id and no project, so those aren't expressible.
+4. **Collections leak.** `Project.tasks` would serialise the whole task list on every list call — and back through `Task.project` recursively.
+
+`ProjectResponse` deliberately omits tasks for reason 4; tasks have their own endpoint.
+
+---
+
+## 2026-09-27 — One `ApiError` shape for every failure, via `@RestControllerAdvice`
+
+**Alternatives considered:** RFC 7807 `ProblemDetail`, which Spring 6 supports natively.
+
+**Why:** `ProblemDetail` is the better long-term answer and this should probably migrate to it before the API is public. For now a hand-written record keeps the field-level validation errors in one obvious place (`fieldErrors`, always present, empty when the failure isn't per-field) so a client parses one shape and never branches on status. Revisit when the API gets its first external consumer.
+
+Mapped: 404 unknown id, 400 validation / malformed body / bad UUID, 409 constraint violation, 500 everything else. The 500 handler logs the cause and returns a fixed message — stack traces are not a response body.
+
+---
+
+## 2026-09-27 — `status` is required on `TaskRequest`, and PUT is a full replace
+
+**Alternatives considered:** Optional `status` where absent means "leave unchanged" (PATCH semantics on a PUT); separate create and update records.
+
+**Why:** With an optional `status`, a `PUT` that omits it has to either reset a running task to `NOT_STARTED` or silently keep the old value, and a caller reading the endpoint cannot guess which. Requiring it makes `PUT` an honest full replacement and keeps one request record instead of two nearly identical ones. The `NOT_STARTED` default in the `Task(title, project)` constructor stays as an entity-level default that this API doesn't rely on.
+
+---
+
+## 2026-09-27 — Deleting a project with tasks is a 409 from the database, not a pre-check
+
+**Alternatives considered:** `existsByProject...` check in the service before deleting; cascade the delete to tasks.
+
+**Why:** A pre-check is a race — a task can be inserted between the check and the delete, so the constraint is still the thing that actually decides. Cascading would make `DELETE /api/projects/{id}` silently destroy task rows, which is not something a caller asking to delete one project would expect. The `tasks.project_id` foreign key is left as the single arbiter and its violation is translated to 409.
+
+---
