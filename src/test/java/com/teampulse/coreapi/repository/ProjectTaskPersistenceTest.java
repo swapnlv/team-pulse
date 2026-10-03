@@ -117,30 +117,48 @@ class ProjectTaskPersistenceTest {
                 + statistics().getPrepareStatementCount() + " statement(s)");
     }
 
+    /**
+     * A demonstration, not a regression guard. It asserts that the N+1 *happens*.
+     *
+     * ProjectRepository.findAll() is the plain inherited lazy query, and this test pins what
+     * that costs: 1 select for the projects, then one more per project the first time its
+     * task collection is read. Three projects is four statements to fetch six rows that a
+     * single join could have returned in one.
+     *
+     * Written this way on purpose, rather than asserting the fixed numbers a fetch join would
+     * give. Nothing in the API reads project.getTasks() — ProjectResponse carries no tasks —
+     * so there is no N+1 to fix today, and an @EntityGraph on findAll() would load every task
+     * row only to throw it away. If someone later adds that fetch join, this test fails and
+     * sends them here to change the numbers deliberately instead of shifting the query
+     * profile by accident.
+     */
     @Test
-    void q3b_andWhatItCostsForThreeProjects() {
+    void q3b_loadingEveryProjectsTasksLazilyCostsOnePlusNStatements() {
+        int projectCount = 3;
         saveProjectWithTwoTasks("Apollo");
         saveProjectWithTwoTasks("Gemini");
         saveProjectWithTwoTasks("Mercury");
         reset();
 
-        List<Project> all = (List<Project>) projectRepository.findAll();
+        List<Project> all = projectRepository.findAll();
         long afterFindAll = statistics().getPrepareStatementCount();
 
         int total = all.stream().mapToInt(p -> p.getTasks().size()).sum();
         long afterTouchingEveryCollection = statistics().getPrepareStatementCount();
+        long lazyLoads = afterTouchingEveryCollection - afterFindAll;
 
         System.out.println("[Q3b] findAll() over " + all.size() + " projects:           " + afterFindAll + " statement(s)");
-        System.out.println("[Q3b] then every getTasks() (" + total + " rows total): "
-                + (afterTouchingEveryCollection - afterFindAll) + " statement(s)");
+        System.out.println("[Q3b] then every getTasks() (" + total + " rows total): " + lazyLoads + " statement(s)");
         System.out.println("[Q3b] total:                                " + afterTouchingEveryCollection);
 
-        // Regression guard for the N+1 fixed by @EntityGraph(attributePaths = "tasks") on
-        // ProjectRepository.findAll(): one statement loads projects and tasks together, and
-        // touching every collection afterwards must not hit the database again.
-        assertThat(total).isEqualTo(6);
+        assertThat(all).hasSize(projectCount);
+        assertThat(total).isEqualTo(projectCount * 2);
+
+        // The 1: a single select for the projects themselves.
         assertThat(afterFindAll).isEqualTo(1);
-        assertThat(afterTouchingEveryCollection - afterFindAll).isZero();
+        // The N: one further select per project, issued when its collection is first touched.
+        assertThat(lazyLoads).isEqualTo(projectCount);
+        assertThat(afterTouchingEveryCollection).isEqualTo(1 + projectCount);
     }
 
     // ---------------------------------------------------------------- the round trip itself

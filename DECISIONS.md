@@ -49,7 +49,7 @@ Every non-trivial choice, the alternatives considered, and why. Newest at the bo
 
 **Why:** A throwaway container proves the Flyway migration *alone* can build a schema that `ddl-auto: validate` accepts — the compose database has a persistent volume, so it could be passing on state some earlier hand-run created. It also matters for counting SQL: statement counts and N+1 demonstrations only mean something against a database with known contents. H2 was never a candidate; the whole point of Phase 1 is that the dialect is Postgres. The compose database stays for running the app by hand.
 
-**Status:** blocked, not yet green. See INCIDENTS — Testcontainers' docker-java client cannot reach Docker Desktop 4.53 / Engine 29 on this machine.
+**Status:** green. Getting there needed `<testcontainers.version>1.21.4</testcontainers.version>` in the pom: Spring Boot 3.3.4's BOM pins 1.19.8, which cannot reach Docker Desktop 4.53 / Engine 29 and fails every connection strategy with an opaque HTTP 400 on `/info`. The cause is Testcontainers' own Docker discovery, not the bundled docker-java — 1.21.3 fails identically and ships the same docker-java 3.4.2 as 1.21.4. Two plausible wrong diagnoses are written up in INCIDENTS.
 
 ---
 
@@ -91,5 +91,16 @@ Mapped: 404 unknown id, 400 validation / malformed body / bad UUID, 409 constrai
 **Alternatives considered:** `existsByProject...` check in the service before deleting; cascade the delete to tasks.
 
 **Why:** A pre-check is a race — a task can be inserted between the check and the delete, so the constraint is still the thing that actually decides. Cascading would make `DELETE /api/projects/{id}` silently destroy task rows, which is not something a caller asking to delete one project would expect. The `tasks.project_id` foreign key is left as the single arbiter and its violation is translated to 409.
+
+---
+## 2026-10-03 — `findAll()` stays lazy; the N+1 is documented rather than fixed
+
+**Alternatives considered:** Keep `@EntityGraph(attributePaths = "tasks")` on `ProjectRepository.findAll()` (the earlier choice); keep the inherited lazy `findAll()` and add a separate graph-annotated `findAllBy()` for callers that need tasks.
+
+**Why:** The fetch join was solving a problem the API doesn't have. `ProjectResponse` deliberately carries no tasks, so no endpoint ever reads `project.getTasks()` — the graph made `GET /api/projects` join and hydrate every task row only to discard it. A second `findAllBy()` was rejected as speculative: there is no caller for it yet, and an unused query is a thing to maintain and explain.
+
+So `findAll()` is the plain inherited lazy query, and the N+1 it implies is **asserted as present** by `ProjectTaskPersistenceTest#q3b_loadingEveryProjectsTasksLazilyCostsOnePlusNStatements` — 1 select for three projects, then 3 more as each task collection is touched, 4 statements for 6 rows.
+
+That test is a demonstration, not a regression guard. It exists so the cost is a measured number in the suite rather than folklore, and so that whoever later adds a fetch join has to come and change the assertion deliberately instead of quietly shifting the query profile. This is the "feel the problem before applying the pattern" build order applied to a query plan: the fix belongs in the phase that has an endpoint which actually needs tasks alongside projects.
 
 ---
